@@ -12,7 +12,6 @@ fn main() {
         }
     "#;
 
-    // 1. Faza Leksera
     let mut lexer = Lexer::new(source_code);
     let mut tokens = Vec::new();
     loop {
@@ -23,7 +22,6 @@ fn main() {
         tokens.push(token);
     }
 
-    // 2. Faza Parsera
     let mut parser = Parser::new(tokens);
     let commands = parser.parse();
 
