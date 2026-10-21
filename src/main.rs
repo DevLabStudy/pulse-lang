@@ -25,8 +25,16 @@ fn main() {
     let mut parser = Parser::new(tokens);
     let commands = parser.parse();
 
-    println!("--- WYNIK PARSOWANIA (AST) ---");
+    println!("--- WYKONANIE PROGRAMU PULSE ---");
     for cmd in commands {
-        println!("{:?}", cmd);
+        match cmd {
+            parser::Command::Log(msg) => {
+                println!("[LOG]: {}", msg);
+            }
+            parser::Command::Scrape { url, selector } => {
+                println!("[SCRAPE]: Łączę się z adresem '{}' używając selektora '{}'", url, selector);
+                // Tutaj w przyszłości dodamy prawdziwe pobieranie HTML przez sieć!
+            }
+        }
     }
 }
