@@ -24,7 +24,7 @@ impl Lexer {
         while self.position < self.input.len() {
             let current_char = self.input[self.position];
 
-            // Pomijanie białych znaków
+            // Pomijanie białych znaków (spacji, nowych linii)
             if current_char.is_whitespace() {
                 self.position += 1;
                 continue;
@@ -45,14 +45,14 @@ impl Lexer {
 
             // Obsługa ciągów tekstowych w cudzysłowie ("...")
             if current_char == '"' {
-                self.position += 1; // pomijamy otwarcie
+                self.position += 1; // pomijamy otwarcie cudzysłowu
                 let start = self.position;
                 while self.position < self.input.len() && self.input[self.position] != '"' {
                     self.position += 1;
                 }
                 let string_val: String = self.input[start..self.position].iter().collect();
                 if self.position < self.input.len() {
-                    self.position += 1; // pomijamy zamknięcie
+                    self.position += 1; // pomijamy zamknięcie cudzysłowu
                 }
                 return Token::StringLiteral(string_val);
             }
@@ -71,6 +71,7 @@ impl Lexer {
 }
 
 fn main() {
+    // Przykładowy skrypt w naszym nowym języku Pulse
     let source_code = r#"
         log "Startuje silnik Pulse..."
         scrape "https://sklep.pl/produkt" {
@@ -79,7 +80,7 @@ fn main() {
     "#;
 
     let mut lexer = Lexer::new(source_code);
-    println!("--- ANALIZA LEKSYKALNA (TOKENY) ---");
+    println!("--- ANALIZA LEKSYKALNA (TOKENY PULSE) ---");
     
     loop {
         let token = lexer.next_token();
