@@ -4,17 +4,17 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    // Przykładowy skrypt w Twoim języku Pulse do sortowania plików
+    // Skrypt w Twoim języku Pulse do sortowania plików
     let pulse_code = r#"
         source "./pobrane_pliki"
 
-        rule "Dokumenty PDF" {
+        rule "Dokumenty Zakupowe PDF" {
             match extension "pdf"
-            create_folder "./Dokumenty"
-            move to "./Dokumenty"
+            create_folder "./Zakupy_PDF"
+            move to "./Zakupy_PDF"
         }
 
-        rule "Grafiki" {
+        rule "Grafiki i Obrazy" {
             match extension "png"
             create_folder "./Obrazy"
             move to "./Obrazy"
@@ -32,7 +32,6 @@ fn run_pulse_sorter(input: &str) {
     let mut current_ext = String::new();
     let mut target_folder = String::new();
 
-    // Prosty interpreter odczytujący tokeny i wykonujący akcje systemowe
     loop {
         let token = lexer.next_token();
         match token {
@@ -57,13 +56,12 @@ fn run_pulse_sorter(input: &str) {
                 }
             }
             Token::Move => {
-                // Oczekujemy słowa "to" oraz ścieżki docelowej
                 let next = lexer.next_token();
                 if next == Token::To {
                     if let Token::String(dest) = lexer.next_token() {
                         target_folder = dest;
                         
-                        // Wykonaj fizyczne sortowanie plików w katalogu
+                        // Wykonaj fizyczne sortowanie plików
                         execute_file_sorting(&source_dir, &current_ext, &target_folder);
                     }
                 }
@@ -78,10 +76,10 @@ fn run_pulse_sorter(input: &str) {
 fn execute_file_sorting(source: &str, extension: &str, target: &str) {
     let path = Path::new(source);
     
-    // Jeśli katalog źródłowy nie istnieje, stwórzmy go dla celów testowych
+    // Jeśli folder źródłowy nie istnieje, stwórz go automatycznie
     if !path.exists() {
         let _ = fs::create_dir_all(path);
-        println!("[INFO]: Utworzono pusty katalog źródłowy '{}' do testów.", source);
+        println!("[INFO]: Utworzono folder '{}'. Wrzuć do niego pliki i uruchom ponownie cargo run.", source);
         return;
     }
 
