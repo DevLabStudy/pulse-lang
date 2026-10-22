@@ -1,13 +1,11 @@
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
-    Log,
-    Scrape,
-    Selector,
-    Let,
-    Assign,
-    For,
-    In,
-    Save,
+    Source,
+    Rule,
+    Match,
+    Extension,
+    CreateFolder,
+    Move,
     To,
     Identifier(String),
     String(String),
@@ -38,11 +36,6 @@ impl Lexer {
 
         let current = self.input[self.position];
 
-        if current == '=' {
-            self.position += 1;
-            return Token::Assign;
-        }
-
         if current == '{' {
             self.position += 1;
             return Token::LBrace;
@@ -72,14 +65,14 @@ impl Lexer {
     }
 
     fn read_string(&mut self) -> Token {
-        self.position += 1; // pomiń otwierający cudzysłów
+        self.position += 1; // pomiń cudzysłów
         let start = self.position;
         while self.position < self.input.len() && self.input[self.position] != '"' {
             self.position += 1;
         }
         let s: String = self.input[start..self.position].iter().collect();
         if self.position < self.input.len() {
-            self.position += 1; // pomiń zamykający cudzysłów
+            self.position += 1; // pomiń końcowy cudzysłów
         }
         Token::String(s)
     }
@@ -94,13 +87,12 @@ impl Lexer {
         let word: String = self.input[start..self.position].iter().collect();
 
         match word.as_str() {
-            "log" => Token::Log,
-            "scrape" => Token::Scrape,
-            "selector" => Token::Selector,
-            "let" => Token::Let,
-            "for" => Token::For,
-            "in" => Token::In,
-            "save" => Token::Save,
+            "source" => Token::Source,
+            "rule" => Token::Rule,
+            "match" => Token::Match,
+            "extension" => Token::Extension,
+            "create_folder" => Token::CreateFolder,
+            "move" => Token::Move,
             "to" => Token::To,
             _ => Token::Identifier(word),
         }
