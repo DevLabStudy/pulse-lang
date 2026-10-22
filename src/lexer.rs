@@ -5,10 +5,10 @@ pub enum Token {
     Match,
     Extension,
     NameContains,
-    GroupByDate,
     CreateFolder,
     Move,
     To,
+    Fallback, // Nowy token
     Identifier(String),
     String(String),
     LBrace,
@@ -66,14 +66,14 @@ impl Lexer {
     }
 
     fn read_string(&mut self) -> Token {
-        self.position += 1; // pomiń otwieraący cudzysłów
+        self.position += 1;
         let start = self.position;
         while self.position < self.input.len() && self.input[self.position] != '"' {
             self.position += 1;
         }
         let s: String = self.input[start..self.position].iter().collect();
         if self.position < self.input.len() {
-            self.position += 1; // pomiń zamykający cudzysłów
+            self.position += 1;
         }
         Token::String(s)
     }
@@ -93,10 +93,10 @@ impl Lexer {
             "match" => Token::Match,
             "extension" => Token::Extension,
             "name_contains" => Token::NameContains,
-            "group_by_date" => Token::GroupByDate,
             "create_folder" => Token::CreateFolder,
             "move" => Token::Move,
             "to" => Token::To,
+            "fallback" => Token::Fallback, // Obsługa słowa kluczowego
             _ => Token::Identifier(word),
         }
     }
