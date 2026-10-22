@@ -1,190 +1,152 @@
-use crate::lexer::Token;
+use crate::lexer::{Lexer, Token};
 
-#[derive(Debug, Clone)]
-pub enum Expr {
-    String(String),
-    Variable(String),
+#[derive(Debug)]
+pub struct Rule {
+    pub name: String,
+    pub extensions: Vec<String>,
+    pub name_filters: Vec<String>,
+    pub create_folder: Option<String>,
+    pub move_to: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-pub enum Command {
-    Log(Expr),
-    Scrape { url: String, selector: String },
-    Let { name: String, command: Box<Command> },
-    For { variable: String, collection: String, body: Vec<Command> },
-    Save { variable: String, filename: String },
+#[derive(Debug)]
+pub struct Program {
+    pub source_dir: String,
+    pub rules: Vec<Rule>,
 }
 
 pub struct Parser {
-    tokens: Vec<Token>,
-    position: usize,
+    lexer: Lexer,
+    current_token: Token,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
-        Parser { tokens, position: 0 }
+    pub fn new(mut lexer: Lexer) -> Self {
+        let current_token = lexer.next_token();
+        Parser { lexer, current_token }
     }
 
-    pub fn parse(&mut self) -> Vec<Command> {
-        let mut commands = Vec::new();
-        while self.position < self.tokens.len() {
-            if let Some(cmd) = self.parse_command() {
-                commands.push(cmd);
-            } else {
-                self.position += 1;
-            }
-        }
-        commands
+    fn advance(&mut self) {
+        self.current_token = self.lexer.next_token();
     }
 
-    fn parse_command(&mut self) -> Option<Command> {
-        let token = self.tokens.get(self.position)?;
+    pub fn parse_program(&mut self) -> Program {
+        let mut source_dir = String::new();
+        let mut rules = Vec::new();
 
-        match token {
-            Token::Save => {
-                self.position += 1;
-                let variable = match self.tokens.get(self.position)? {
-                    Token::Identifier(id) => {
-                        let v = id.clone();
-                        self.position += 1;
-                        v
+        while self.current_token != Token::Eof {
+            match &self.current_token {
+                Token::Source => {
+                    self.advance();
+                    if let Token::String(path) = &self.current_token {
+                        source_dir = path.clone();
                     }
-                    _ => return None,
-                };
-
-                if let Some(Token::To) = self.tokens.get(self.position) {
-                    self.position += 1;
-                } else {
-                    return None;
+                    self.advance();
                 }
-
-                let filename = match self.tokens.get(self.position)? {
-                    Token::String(s) => {
-                        let f = s.clone();
-                        self.position += 1;
-                        f
-                    }
-                    _ => return None,
-                };
-
-                Some(Command::Save { variable, filename })
+                Token::Rule => {
+                    rules.push(self.parse_rule());
+                }
+                _ => {
+                    self.advance();
+                }
             }
-            Token::For => {
-                self.position += 1;
-                let variable = match self.tokens.get(self.position)? {
-                    Token::Identifier(id) => {
-                        let v = id.clone();
-                        self.position += 1;
-                        v
-                    }
-                    _ => return None,
-                };
-
-                if let Some(Token::In) = self.tokens.get(self.position) {
-                    self.position += 1;
-                } else {
-                    return None;
-                }
-
-                let collection = match self.tokens.get(self.position)? {
-                    Token::Identifier(id) => {
-                        let c = id.clone();
-                        self.position += 1;
-                        c
-                    }
-                    _ => return None,
-                };
-
-                let mut body = Vec::new();
-                if let Some(Token::LBrace) = self.tokens.get(self.position) {
-                    self.position += 1;
-                    while self.position < self.tokens.len() {
-                        if let Some(Token::RBrace) = self.tokens.get(self.position) {
-                            self.position += 1;
-                            break;
-                        }
-                        if let Some(cmd) = self.parse_command() {
-                            body.push(cmd);
-                        } else {
-                            self.position += 1;
-                        }
-                    }
-                }
-
-                Some(Command::For { variable, collection, body })
-            }
-            Token::Let => {
-                self.position += 1;
-                let name = match self.tokens.get(self.position)? {
-                    Token::Identifier(id) => {
-                        let n = id.clone();
-                        self.position += 1;
-                        n
-                    }
-                    _ => return None,
-                };
-
-                if let Some(Token::Assign) = self.tokens.get(self.position) {
-                    self.position += 1;
-                } else {
-                    return None;
-                }
-
-                let cmd = self.parse_command()?;
-                Some(Command::Let {
-                    name,
-                    command: Box::new(cmd),
-                })
-            }
-            Token::Log => {
-                self.position += 1;
-                let expr = match self.tokens.get(self.position)? {
-                    Token::String(s) => {
-                        let val = s.clone();
-                        self.position += 1;
-                        Expr::String(val)
-                    }
-                    Token::Identifier(id) => {
-                        let val = id.clone();
-                        self.position += 1;
-                        Expr::Variable(val)
-                    }
-                    _ => return None,
-                };
-                Some(Command::Log(expr))
-            }
-            Token::Scrape => {
-                self.position += 1;
-                let url = match self.tokens.get(self.position)? {
-                    Token::String(s) => {
-                        let u = s.clone();
-                        self.position += 1;
-                        u
-                    }
-                    _ => return None,
-                };
-
-                if let Some(Token::LBrace) = self.tokens.get(self.position) {
-                    self.position += 1;
-                }
-                if let Some(Token::Selector) = self.tokens.get(self.position) {
-                    self.position += 1;
-                }
-                let selector = match self.tokens.get(self.position)? {
-                    Token::String(s) => {
-                        let sel = s.clone();
-                        self.position += 1;
-                        sel
-                    }
-                    _ => "".to_string(),
-                };
-                if let Some(Token::RBrace) = self.tokens.get(self.position) {
-                    self.position += 1;
-                }
-
-                Some(Command::Scrape { url, selector })
-            }
-            _ => None,
         }
+
+        Program { source_dir, rules }
+    }
+
+    fn parse_rule(&mut self) -> Rule {
+        // Składnia: rule "Nazwa" { ... }
+        self.advance(); // pomiń "rule"
+        let name = match &self.current_token {
+            Token::String(n) => n.clone(),
+            _ => "Unnamed".to_string(),
+        };
+        self.advance(); // pomiń nazwę
+
+        if self.current_token == Token::LBrace {
+            self.advance();
+        }
+
+        let mut extensions = Vec::new();
+        let mut name_filters = Vec::new();
+        let mut create_folder = None;
+        let mut move_to = None;
+
+    	while self.current_token != Token::RBrace && self.current_token != Token::Eof {
+            match &self.current_token {
+                Token::Match => {
+                    self.advance();
+                    if self.current_token == Token::Extension {
+                        self.advance();
+                        extensions = self.parse_string_or_list();
+                    } else if self.current_token == Token::NameContains {
+                        self.advance();
+                        name_filters = self.parse_string_or_list();
+                    }
+                }
+                Token::CreateFolder => {
+                    self.advance();
+                    if let Token::String(path) = &self.current_token {
+                        create_folder = Some(path.clone());
+                    }
+                    self.advance();
+                }
+                Token::Move => {
+                    self.advance();
+                    if self.current_token == Token::To {
+                        self.advance();
+                        if let Token::String(path) = &self.current_token {
+                            move_to = Some(path.clone());
+                        }
+                        self.advance();
+                    }
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+
+        if self.current_token == Token::RBrace {
+            self.advance();
+        }
+
+        Rule {
+            name,
+            extensions,
+            name_filters,
+            create_folder,
+            move_to,
+        }
+    }
+
+    fn parse_string_or_list(&mut self) -> Vec<String> {
+        let mut results = Vec::new();
+
+        match &self.current_token {
+            Token::String(s) => {
+                results.push(s.clone());
+                self.advance();
+            }
+            Token::LBracket => {
+                self.advance();
+                while self.current_token != Token::RBracket && self.current_token != Token::Eof {
+                    if let Token::String(s) = &self.current_token {
+                        results.push(s.clone());
+                    }
+                    self.advance();
+                    if self.current_token == Token::Comma {
+                        self.advance();
+                    }
+                }
+                if self.current_token == Token::RBracket {
+                    self.advance();
+                }
+            }
+            _ => {}
+        }
+
+        results
     }
 }
