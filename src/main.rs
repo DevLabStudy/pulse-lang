@@ -1,170 +1,105 @@
 mod lexer;
-mod parser;
-
 use lexer::{Lexer, Token};
-use parser::{Parser, Command, Expr};
-use scraper::{Html, Selector};
-use std::collections::HashMap;
 use std::fs;
-use std::io::{self, Write};
+use std::path::Path;
 
 fn main() {
-    println!("=== INTELIGENTNY SILNIK PULSE (WEB SCRAPER) ===");
+    // Przykładowy skrypt w Twoim języku Pulse do sortowania plików
+    let pulse_code = r#"
+        source "./pobrane_pliki"
 
-    let url = prompt_user("Podaj adres URL (np. https://pl.wikipedia.org/wiki/Tkanka): ");
-    let keyword = prompt_user("Podaj słowo kluczowe do wyszukania (np. nabłonek, krew): ");
-    let filename = prompt_user("Podaj nazwę pliku wynikowego (np. biologia.txt): ");
+        rule "Dokumenty PDF" {
+            match extension "pdf"
+            create_folder "./Dokumenty"
+            move to "./Dokumenty"
+        }
 
-    let source_code = format!(
-        r#"
-            log "Startuje silnik Pulse..."
-            let surowe_dane = scrape "{}" {{
-                selector: "body"
-            }}
-            log "Pobieranie zakończone."
-        "#,
-        url
-    );
+        rule "Grafiki" {
+            match extension "png"
+            create_folder "./Obrazy"
+            move to "./Obrazy"
+        }
+    "#;
 
-    let mut lexer = Lexer::new(&source_code);
-    let mut tokens = Vec::new();
+    println!("--- URUCHAMIANIE SILNIKA PULSE (FILE SORTER) ---");
+    run_pulse_sorter(pulse_code);
+}
+
+fn run_pulse_sorter(input: &str) {
+    let mut lexer = Lexer::new(input);
+    
+    let mut source_dir = String::new();
+    let mut current_ext = String::new();
+    let mut target_folder = String::new();
+
+    // Prosty interpreter odczytujący tokeny i wykonujący akcje systemowe
     loop {
         let token = lexer.next_token();
-        if token == Token::Eof {
-            break;
-        }
-        tokens.push(token);
-    }
-
-    let mut parser = Parser::new(tokens);
-    let commands = parser.parse();
-
-    let mut variables: HashMap<String, Vec<String>> = HashMap::new();
-
-    println!("\n--- WYKONANIE PROGRAMU PULSE ---");
-    for cmd in commands {
-        execute_command(cmd, &mut variables);
-    }
-
-    // Zaawansowane przeszukiwanie całego tekstu strony
-    if let Some(items) = variables.get("surowe_dane") {
-        let keyword_lower = keyword.to_lowercase();
-        let mut matched_sentences = Vec::new();
-
-        for block in items {
-            // Dzielimy pobrany tekst na mniejsze fragmenty (zdania/linie)
-            for sentence in block.split(['.', '!', '?']) {
-                if sentence.to_lowercase().contains(&keyword_lower) {
-                    let cleaned = sentence.trim().to_string();
-                    if !cleaned.is_empty() && !matched_sentences.contains(&cleaned) {
-                        matched_sentences.push(cleaned);
+        match token {
+            Token::Source => {
+                if let Token::String(path) = lexer.next_token() {
+                    source_dir = path;
+                    println!("[PULSE SOURCE]: Ustawiono katalog wejściowy: '{}'", source_dir);
+                }
+            }
+            Token::Extension => {
+                if let Token::String(ext) = lexer.next_token() {
+                    current_ext = ext;
+                }
+            }
+            Token::CreateFolder => {
+                if let Token::String(folder) = lexer.next_token() {
+                    if let Err(e) = fs::create_dir_all(&folder) {
+                        eprintln!("[BŁĄD]: Nie udało się utworzyć folderu {}: {}", folder, e);
+                    } else {
+                        println!("[PULSE FOLDER]: Utworzono katalog: '{}'", folder);
                     }
                 }
             }
-        }
-
-        let count = matched_sentences.len();
-        let content = if count > 0 {
-            matched_sentences.join(".\n\n") + "."
-        } else {
-            format!("Nie znaleziono dokładnego dopasowania dla słowa: '{}'", keyword)
-        };
-
-        match fs::write(&filename, content) {
-            Ok(_) => println!("[SAVE]: Zapisano wyniki do pliku '{}' (znaleziono pasujących fragmentów: {})", filename, count),
-            Err(e) => eprintln!("[BŁĄD]: Nie udało się zapisać pliku: {}", e),
-        }
-    } else {
-        eprintln!("[BŁĄD]: Nie udało się pobrać danych ze strony.");
-    }
-}
-
-fn prompt_user(prompt_text: &str) -> String {
-    print!("{}", prompt_text);
-    io::stdout().flush().unwrap();
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    input.trim().to_string()
-}
-
-fn execute_command(cmd: Command, variables: &mut HashMap<String, Vec<String>>) {
-    match cmd {
-        Command::Log(expr) => match expr {
-            Expr::String(msg) => {
-                println!("[LOG]: {}", msg);
-            }
-            Expr::Variable(var_name) => {
-                if let Some(val) = variables.get(&var_name) {
-                    println!("[LOG (zmienna '{}')]: {:?}", var_name, val);
-                } else {
-                    eprintln!("[BŁĄD]: Nieznana zmienna '{}'", var_name);
-                }
-            }
-        },
-        Command::Scrape { url, selector } => {
-            let _ = run_scrape(&url, &selector);
-        }
-        Command::Let { name, command } => {
-            if let Command::Scrape { url, selector } = *command {
-                println!("[SCRAPE]: Łączę się z adresem '{}'...", url);
-                let scraped_data = run_scrape(&url, &selector);
-                variables.insert(name, scraped_data);
-            } else {
-                eprintln!("[BŁĄD]: Konstrukcja 'let' obsługuje obecnie tylko wyniki z polecenia 'scrape'");
-            }
-        }
-        Command::For { variable, collection, body } => {
-            if let Some(items) = variables.get(&collection).cloned() {
-                for item in items {
-                    variables.insert(variable.clone(), vec![item]);
-                    for cmd in &body {
-                        execute_command(cmd.clone(), variables);
+            Token::Move => {
+                // Oczekujemy słowa "to" oraz ścieżki docelowej
+                let next = lexer.next_token();
+                if next == Token::To {
+                    if let Token::String(dest) = lexer.next_token() {
+                        target_folder = dest;
+                        
+                        // Wykonaj fizyczne sortowanie plików w katalogu
+                        execute_file_sorting(&source_dir, &current_ext, &target_folder);
                     }
                 }
-            } else {
-                eprintln!("[BŁĄD]: Nieznana kolekcja w pętli for: '{}'", collection);
             }
-        }
-        Command::Save { variable, filename } => {
-            if let Some(items) = variables.get(&variable) {
-                let content = items.join("\n");
-                let _ = fs::write(&filename, content);
-            }
+            Token::Eof => break,
+            _ => {}
         }
     }
+    println!("--- SORTOWANIE ZAKOŃCZONE SUKCESEM ---");
 }
 
-// Funkcja pobierająca stronę z nagłówkiem User-Agent (wymaganym przez Wikipedię)
-fn run_scrape(url: &str, selector_str: &str) -> Vec<String> {
-    let mut results = Vec::new();
+fn execute_file_sorting(source: &str, extension: &str, target: &str) {
+    let path = Path::new(source);
     
-    // Tworzymy klienta HTTP z wymaganym User-Agentem, aby Wikipedia nas nie odrzuciła
-    let client = match reqwest::blocking::Client::builder()
-        .user_agent("PulseScraper/1.0 (Educational Project)")
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return results,
-    };
+    // Jeśli katalog źródłowy nie istnieje, stwórzmy go dla celów testowych
+    if !path.exists() {
+        let _ = fs::create_dir_all(path);
+        println!("[INFO]: Utworzono pusty katalog źródłowy '{}' do testów.", source);
+        return;
+    }
 
-    match client.get(url).send() {
-        Ok(resp) => {
-            if let Ok(body) = resp.text() {
-                let document = Html::parse_document(&body);
-                if let Ok(sel) = Selector::parse(selector_str) {
-                    for element in document.select(&sel) {
-                        let text = element.text().collect::<Vec<_>>().join(" ");
-                        let cleaned = text.split_whitespace().collect::<Vec<_>>().join(" ");
-                        if !cleaned.is_empty() {
-                            results.push(cleaned);
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let file_path = entry.path();
+            if file_path.is_file() {
+                if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
+                    if ext.eq_ignore_ascii_case(extension) {
+                        if let Some(file_name) = file_path.file_name() {
+                            let dest_path = Path::new(target).join(file_name);
+                            if let Ok(_) = fs::rename(&file_path, &dest_path) {
+                                println!("[PRZENIESIONO]: {:?} -> {}", file_name, target);
+                            }
                         }
                     }
                 }
             }
         }
-        Err(e) => {
-            eprintln!("[BŁĄD]: Nie udało się pobrać strony: {}", e);
-        }
     }
-    results
 }
