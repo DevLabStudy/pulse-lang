@@ -4,6 +4,8 @@ pub enum Token {
     Rule,
     Match,
     Extension,
+    NameContains,
+    GroupByDate,
     CreateFolder,
     Move,
     To,
@@ -11,6 +13,9 @@ pub enum Token {
     String(String),
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
+    Comma,
     Eof,
 }
 
@@ -36,26 +41,22 @@ impl Lexer {
 
         let current = self.input[self.position];
 
-        if current == '{' {
-            self.position += 1;
-            return Token::LBrace;
+        match current {
+            '{' => { self.position += 1; Token::LBrace }
+            '}' => { self.position += 1; Token::RBrace }
+            '[' => { self.position += 1; Token::LBracket }
+            ']' => { self.position += 1; Token::RBracket }
+            ',' => { self.position += 1; Token::Comma }
+            '"' => self.read_string(),
+            _ => {
+                if current.is_alphabetic() || current == '_' {
+                    self.read_identifier_or_keyword()
+                } else {
+                    self.position += 1;
+                    self.next_token()
+                }
+            }
         }
-
-        if current == '}' {
-            self.position += 1;
-            return Token::RBrace;
-        }
-
-        if current == '"' {
-            return self.read_string();
-        }
-
-        if current.is_alphabetic() {
-            return self.read_identifier_or_keyword();
-        }
-
-        self.position += 1;
-        self.next_token()
     }
 
     fn skip_whitespace(&mut self) {
@@ -65,14 +66,14 @@ impl Lexer {
     }
 
     fn read_string(&mut self) -> Token {
-        self.position += 1; // pomiń cudzysłów
+        self.position += 1; // pomiń otwieraący cudzysłów
         let start = self.position;
         while self.position < self.input.len() && self.input[self.position] != '"' {
             self.position += 1;
         }
         let s: String = self.input[start..self.position].iter().collect();
         if self.position < self.input.len() {
-            self.position += 1; // pomiń końcowy cudzysłów
+            self.position += 1; // pomiń zamykający cudzysłów
         }
         Token::String(s)
     }
@@ -91,6 +92,8 @@ impl Lexer {
             "rule" => Token::Rule,
             "match" => Token::Match,
             "extension" => Token::Extension,
+            "name_contains" => Token::NameContains,
+            "group_by_date" => Token::GroupByDate,
             "create_folder" => Token::CreateFolder,
             "move" => Token::Move,
             "to" => Token::To,
