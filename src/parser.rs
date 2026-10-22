@@ -13,6 +13,7 @@ pub struct Rule {
 pub struct Program {
     pub source_dir: String,
     pub rules: Vec<Rule>,
+    pub fallback: Option<(String, String)>, // (create_folder, move_to)
 }
 
 pub struct Parser {
@@ -33,6 +34,7 @@ impl Parser {
     pub fn parse_program(&mut self) -> Program {
         let mut source_dir = String::new();
         let mut rules = Vec::new();
+        let mut fallback = None;
 
         while self.current_token != Token::Eof {
             match &self.current_token {
@@ -46,23 +48,25 @@ impl Parser {
                 Token::Rule => {
                     rules.push(self.parse_rule());
                 }
+                Token::Fallback => {
+                    fallback = Some(self.parse_fallback());
+                }
                 _ => {
                     self.advance();
                 }
             }
         }
 
-        Program { source_dir, rules }
+        Program { source_dir, rules, fallback }
     }
 
     fn parse_rule(&mut self) -> Rule {
-        // Składnia: rule "Nazwa" { ... }
         self.advance(); // pomiń "rule"
         let name = match &self.current_token {
             Token::String(n) => n.clone(),
             _ => "Unnamed".to_string(),
         };
-        self.advance(); // pomiń nazwę
+        self.advance();
 
         if self.current_token == Token::LBrace {
             self.advance();
@@ -73,7 +77,7 @@ impl Parser {
         let mut create_folder = None;
         let mut move_to = None;
 
-    	while self.current_token != Token::RBrace && self.current_token != Token::Eof {
+        while self.current_token != Token::RBrace && self.current_token != Token::Eof {
             match &self.current_token {
                 Token::Match => {
                     self.advance();
@@ -112,18 +116,52 @@ impl Parser {
             self.advance();
         }
 
-        Rule {
-            name,
-            extensions,
-            name_filters,
-            create_folder,
-            move_to,
+        Rule { name, extensions, name_filters, create_folder, move_to }
+    }
+
+    fn parse_fallback(&mut self) -> (String, String) {
+        self.advance(); // pomiń "fallback"
+        if self.current_token == Token::LBrace {
+            self.advance();
         }
+
+        let mut create_folder = String::new();
+        let mut move_to = String::new();
+
+        while self.current_token != Token::RBrace && self.current_token != Token::Eof {
+            match &self.current_token {
+                Token::CreateFolder => {
+                    self.advance();
+                    if let Token::String(path) = &self.current_token {
+                        create_folder = path.clone();
+                    }
+                    self.advance();
+                }
+                Token::Move => {
+                    self.advance();
+                    if self.current_token == Token::To {
+                        self.advance();
+                        if let Token::String(path) = &self.current_token {
+                            move_to = path.clone();
+                        }
+                        self.advance();
+                    }
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+
+        if self.current_token == Token::RBrace {
+            self.advance();
+        }
+
+        (create_folder, move_to)
     }
 
     fn parse_string_or_list(&mut self) -> Vec<String> {
         let mut results = Vec::new();
-
         match &self.current_token {
             Token::String(s) => {
                 results.push(s.clone());
@@ -146,7 +184,6 @@ impl Parser {
             }
             _ => {}
         }
-
         results
     }
 }
