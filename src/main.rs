@@ -4,24 +4,30 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    // Skrypt w Twoim języku Pulse do sortowania plików
+    // Rozbudowany skrypt Pulse z wieloma formatami i kategoriami
     let pulse_code = r#"
         source "./pobrane_pliki"
 
-        rule "Dokumenty Zakupowe PDF" {
-            match extension "pdf"
-            create_folder "./Zakupy_PDF"
-            move to "./Zakupy_PDF"
+        rule "Dokumenty i Faktury" {
+            match extension ["pdf", "txt", "docx"]
+            create_folder "./Kategoria_Dokumenty"
+            move to "./Kategoria_Dokumenty"
         }
 
-        rule "Grafiki i Obrazy" {
-            match extension "png"
-            create_folder "./Obrazy"
-            move to "./Obrazy"
+        rule "Media i Grafiki" {
+            match extension ["png", "jpg", "jpeg", "webp"]
+            create_folder "./Kategoria_Media"
+            move to "./Kategoria_Media"
+        }
+
+        rule "Archiwa i Pliki ZIP" {
+            match extension ["zip", "rar", "7z"]
+            create_folder "./Kategoria_Archiwa"
+            move to "./Kategoria_Archiwa"
         }
     "#;
 
-    println!("--- URUCHAMIANIE SILNIKA PULSE (FILE SORTER) ---");
+    println!("--- URUCHAMIANIE SILNIKA PULSE (ADVANCED SORTER) ---");
     run_pulse_sorter(pulse_code);
 }
 
@@ -29,7 +35,6 @@ fn run_pulse_sorter(input: &str) {
     let mut lexer = Lexer::new(input);
     
     let mut source_dir = String::new();
-    let mut current_ext = String::new();
     let mut target_folder = String::new();
 
     loop {
@@ -38,31 +43,75 @@ fn run_pulse_sorter(input: &str) {
             Token::Source => {
                 if let Token::String(path) = lexer.next_token() {
                     source_dir = path;
-                    println!("[PULSE SOURCE]: Ustawiono katalog wejściowy: '{}'", source_dir);
+                    println!("[PULSE SOURCE]: Katalog wejściowy: '{}'", source_dir);
                 }
             }
             Token::Extension => {
-                if let Token::String(ext) = lexer.next_token() {
-                    current_ext = ext;
-                }
-            }
-            Token::CreateFolder => {
-                if let Token::String(folder) = lexer.next_token() {
-                    if let Err(e) = fs::create_dir_all(&folder) {
-                        eprintln!("[BŁĄD]: Nie udało się utworzyć folderu {}: {}", folder, e);
-                    } else {
-                        println!("[PULSE FOLDER]: Utworzono katalog: '{}'", folder);
-                    }
-                }
-            }
-            Token::Move => {
+                // Sprawdzamy, czy mamy pojedyncze rozszerzenie czy tablicę rozszerzeń
                 let next = lexer.next_token();
-                if next == Token::To {
-                    if let Token::String(dest) = lexer.next_token() {
-                        target_folder = dest;
-                        
-                        // Wykonaj fizyczne sortowanie plików
-                        execute_file_sorting(&source_dir, &current_ext, &target_folder);
+                let mut extensions = Vec::new();
+
+                match next {
+                    Token::String(ext) => {
+                        extensions.push(ext);
+                    }
+                    Token::LBrace | Token::Identifier(_) => {
+                        // Obsługa prostego wczytywania listy rozszerzeń
+                        loop {
+                            let item = lexer.next_token();
+                            match item {
+                                Token::String(e) => extensions.push(e),
+                                Token::RBrace => break,
+                                Token::Eof => break,
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+
+                // Czekamy na akcję utworzenia folderu i przeniesienia
+                // W uproszczonym interpreterze łapiemy kolejne tokeny reguły
+                let mut local_target = String::new();
+                let mut found_move = false;
+
+                loop {
+                    let t = lexer.next_token();
+                    match t {
+                        Token::CreateFolder => {
+                            if let Token::String(folder) = lexer.next_token() {
+                                let _ = fs::create_dir_all(&folder);
+                                local_target = folder.clone();
+                                target_folder = folder;
+                                println!("[PULSE FOLDER]: Utworzono: '{}'", target_folder);
+                            }
+                        }
+                        Token::Move => {
+                            if lexer.next_token() == Token::To {
+                                if let Token::String(dest) = lexer.next_token() {
+                                    local_target = dest.clone();
+                                    target_folder = dest;
+                                    found_move = true;
+                                }
+                            }
+                        }
+                        Token::Rule | Token::Eof => {
+                            // Cofamy lub kończymy regułę, wykonujemy sortowanie dla tych rozszerzeń
+                            if found_move && !extensions.is_empty() {
+                                for ext in &extensions {
+                                    execute_file_sorting(&source_dir, ext, &local_target);
+                                }
+                            }
+                            // Jeśli to początek kolejnej reguły, musimy obsłużyć token
+                            if t == Token::Rule {
+                                // Małe mini-cofnięcie logiki dla kolejnej reguły
+                                break;
+                            }
+                            if t == Token::Eof {
+                                return;
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -76,10 +125,8 @@ fn run_pulse_sorter(input: &str) {
 fn execute_file_sorting(source: &str, extension: &str, target: &str) {
     let path = Path::new(source);
     
-    // Jeśli folder źródłowy nie istnieje, stwórz go automatycznie
     if !path.exists() {
         let _ = fs::create_dir_all(path);
-        println!("[INFO]: Utworzono folder '{}'. Wrzuć do niego pliki i uruchom ponownie cargo run.", source);
         return;
     }
 
@@ -92,7 +139,7 @@ fn execute_file_sorting(source: &str, extension: &str, target: &str) {
                         if let Some(file_name) = file_path.file_name() {
                             let dest_path = Path::new(target).join(file_name);
                             if let Ok(_) = fs::rename(&file_path, &dest_path) {
-                                println!("[PRZENIESIONO]: {:?} -> {}", file_name, target);
+                                println!("[PRZENIESIONO]: {:?} (.({})) -> {}", file_name, extension, target);
                             }
                         }
                     }
