@@ -4,7 +4,45 @@ mod parser;
 use lexer::Lexer;
 use parser::Parser;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+// Funkcja zabezpieczająca przed nadpisywaniem plików o tej samej nazwie
+fn get_unique_destination_path(target_dir: &Path, file_name: &str) -> PathBuf {
+    let mut dest_path = target_dir.join(file_name);
+    
+    if !dest_path.exists() {
+        return dest_path;
+    }
+
+    let path_obj = Path::new(file_name);
+    let stem = path_obj.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let extension = path_obj.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e)).unwrap_or_default();
+    
+    let mut counter = 1;
+    loop {
+        let new_file_name = format!("{}_{}{}", stem, counter, extension);
+        let candidate = target_dir.join(new_file_name);
+        if !candidate.exists() {
+            println!("[KONFLIKT NAZW]: Plik '{}' już istnieje. Zmieniono nazwę na '{}'", file_name, candidate.file_name().unwrap().to_str().unwrap());
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+// Rekurencyjne wyszukiwanie plików, również wewnątrz podfolderów źródłowych
+fn collect_files_recursively(dir: &Path, files: &mut Vec<PathBuf>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_files_recursively(&path, files); // Wchodzi głębiej do podfolderu
+            } else if path.is_file() {
+                files.push(path); // Dodaje plik do listy
+            }
+        }
+    }
+}
 
 fn main() {
     // Profesjonalny skrypt Pulse w wersji Pro
@@ -46,7 +84,7 @@ fn main() {
     let program = parser.parse_program();
 
     println!("[PULSE SOURCE]: Katalog wejściowy: '{}'", program.source_dir);
-    println!("[PRO ENGINE]: Uruchomiono inteligentne mapowanie typów i podfolderów.\n");
+    println!("[PRO ENGINE]: Uruchomiono inteligentne mapowanie typów, podfolderów oraz skanowanie rekurencyjne.\n");
 
     execute_pro_program(&program);
 
@@ -62,16 +100,9 @@ fn execute_pro_program(program: &parser::Program) {
         return;
     }
 
-    let entries = match fs::read_dir(source_path) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    let files: Vec<_> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file())
-        .collect();
+    // Zbieranie plików rekurencyjnie (także z podfolderów wewnątrz źródła)
+    let mut files = Vec::new();
+    collect_files_recursively(source_path, &mut files);
 
     for file_path in files {
         let file_name_str = match file_path.file_name().and_then(|n| n.to_str()) {
@@ -113,15 +144,14 @@ fn execute_pro_program(program: &parser::Program) {
 
             if is_match {
                 if let Some(base_target) = &rule.move_to {
-                    // ARCHITEKTURA PRO: Tworzenie automatycznego podfolderu wg typu pliku (rozszerzenia)
-                    // np. ./Grafiki/png, ./Grafiki/svg, ./Dokumenty/pptx
                     let target_dir = Path::new(base_target).join(&file_ext);
-                    
                     let _ = fs::create_dir_all(&target_dir);
                     
-                    let dest_path = target_dir.join(file_name_str);
+                    // Bezpieczna ścieżka chroniąca przed nadpisaniem
+                    let dest_path = get_unique_destination_path(&target_dir, file_name_str);
+
                     if let Ok(_) = fs::rename(&file_path, &dest_path) {
-                        println!("[PRO MOVE ({})] '{}' -> podfolder /{}", rule.name, file_name_str, file_ext);
+                        println!("[PRO MOVE ({})] '{}' -> /{} (zapisano jako: '{}')", rule.name, file_name_str, file_ext, dest_path.file_name().unwrap().to_str().unwrap());
                         matched = true;
                         break;
                     }
@@ -129,16 +159,17 @@ fn execute_pro_program(program: &parser::Program) {
             }
         }
 
-        // 2. FALLBACK PRO: Jeśli plik nie pasował do żadnej reguły, system sam go przejmuje,
-        // tworzy katalog dla jego unikalnego rozszerzenia i segreguje go automatycznie!
+        // 2. FALLBACK PRO: Jeśli plik nie pasował do żadnej reguły
         if !matched {
             if let Some((_, fallback_target)) = &program.fallback {
                 let target_dir = Path::new(fallback_target).join(&file_ext);
                 let _ = fs::create_dir_all(&target_dir);
                 
-                let dest_path = target_dir.join(file_name_str);
+                // Zabezpieczenie przed nadpisaniem również w fallbacku
+                let dest_path = get_unique_destination_path(&target_dir, file_name_str);
+
                 if let Ok(_) = fs::rename(&file_path, &dest_path) {
-                    println!("[PRO FALLBACK AUTO-SORT] '{}' -> Nieznany typ rozdzielony do /{}", file_name_str, file_ext);
+                    println!("[PRO FALLBACK AUTO-SORT] '{}' -> Nieznany typ /{} (zapisano jako: '{}')", file_name_str, file_ext, dest_path.file_name().unwrap().to_str().unwrap());
                 }
             }
         }
